@@ -1,8 +1,9 @@
-from flask import Flask, render_template_string, request, redirect, session
-import json, os
+from flask import Flask, render_template_string, request, redirect, session, url_for
+import json, os, random, datetime
+from werkzeug.security import generate_password_hash, check_password_hash
 
-app = Flask(__name__)
-app.secret_key = "secret123"
+app = Flask(name)
+app.secret_key = "ultra_secret_key"
 
 archivo = "usuarios.json"
 
@@ -16,90 +17,75 @@ def guardar(data):
     with open(archivo, "w") as f:
         json.dump(data, f, indent=4)
 
+def generar_tarjeta():
+    return " ".join(str(random.randint(1000,9999)) for _ in range(4))
+
 usuarios = cargar()
 
 html = """
 <!DOCTYPE html>
 <html>
 <head>
-<title>Cyber Bank Premium</title>
+<title>Cyber Bank</title>
 
 <style>
 body {
     margin:0;
     background:black;
-    color:#00ff00;
-    font-family:Courier;
+    color:white;
+    font-family:sans-serif;
 }
 
-/* 💀 fondo */
+/* fondo calavera */
 body::before {
     content:"";
-    background:url('/static/calavera.png') no-repeat center center;
+    background:url('{{ url_for("static", filename="calavera.png") }}') no-repeat center;
     background-size:cover;
-    opacity:0.12;
+    opacity:0.1;
     position:fixed;
     width:100%;
     height:100%;
     z-index:-2;
 }
 
-body::after {
-    content:"";
-    position:fixed;
-    width:100%;
-    height:100%;
-    background:rgba(0,0,0,0.8);
-    z-index:-1;
-}
-
-/* contenedor */
 .container {
     width:350px;
-    margin:80px auto;
-    text-align:center;
-}
-
-/* inputs */
-input, button {
-    width:90%;
-    padding:10px;
-    margin:8px;
-    background:#111;
-    color:#00ff00;
-    border:1px solid #00ff00;
-}
-
-button:hover {
-    background:#00ff00;
-    color:black;
+    margin:50px auto;
 }
 
 /* tarjeta */
 .card {
-    margin-top:20px;
+    background: linear-gradient(135deg, #0f0f0f, #1a1a1a);
+    border-radius:20px;
     padding:20px;
-    border-radius:15px;
-    background:#0a0a0a;
-    box-shadow:0 0 20px #00ff00;
+    color:#00ffcc;
+    box-shadow:0 10px 40px rgba(0,255,200,0.4);
+    animation: float 3s ease-in-out infinite;
 }
 
-/* dashboard */
-.stats {
-    display:flex;
-    justify-content:space-between;
-    margin-top:10px;
+@keyframes float {
+    0% {transform:translateY(0px);}
+    50% {transform:translateY(-10px);}
+    100% {transform:translateY(0px);}
 }
 
-.stat {
-    border:1px solid #00ff00;
+/* inputs */
+input, button {
+    width:100%;
     padding:10px;
-    width:45%;
+    margin:5px 0;
+    border:none;
+    border-radius:10px;
+}
+
+button {
+    background:#00ffcc;
+    color:black;
+    font-weight:bold;
 }
 
 /* historial */
 ul {
-    text-align:left;
     max-height:150px;
     overflow:auto;
 }
@@ -110,7 +96,7 @@ ul {
 
 <div class="container">
 
-<h2>💀 CYBER BANK PREMIUM</h2>
+<h2>💀 Cyber Bank</h2>
 
 {% if not session.get("user") %}
 
@@ -127,16 +113,10 @@ ul {
 
 <h3>Bienvenido {{session["user"]}}</h3>
 
-<div class="stats">
-<div class="stat">💰 ${{saldo}}</div>
-<div class="stat">📊 {{historial|length}} mov</div>
-</div>
-
 <div class="card">
-<h3>💳 TARJETA DIGITAL</h3>
+<p>💳 {{tarjeta}}</p>
 <p>{{session["user"]}}</p>
-<p>${{saldo}}</p>
-<p>**** **** **** {{saldo|string|length}}123</p>
+<h2>${{saldo}}</h2>
 </div>
 
 <form method="post">
@@ -145,7 +125,7 @@ ul {
 <button name="action" value="transfer">Transferir</button>
 </form>
 
-<h4>📜 Historial</h4>
+<h4>Historial</h4>
 <ul>
 {% for h in historial %}
 <li>{{h}}</li>
@@ -156,12 +136,9 @@ ul {
 <button name="action" value="logout">Cerrar sesión</button>
 </form>
 
-<p>{{msg}}</p>
-
 {% endif %}
 
 </div>
-
 </body>
 </html>
 """
@@ -178,46 +155,39 @@ def home():
 
         usuarios = cargar()
 
-        # REGISTRO
         if action == "register":
             if u not in usuarios:
-                usuarios[u] = {"password": p, "saldo": 0, "historial": []}
+                usuarios[u] = {
+                    "password": generate_password_hash(p),
+                    "saldo": 0,
+                    "historial": [],
+                    "tarjeta": generar_tarjeta()
+                }
                 guardar(usuarios)
-                msg = "✔ Usuario creado"
-            else:
-                msg = "Ya existe"
+                msg = "Usuario creado"
 
-        # LOGIN
         elif action == "login":
-            if u in usuarios and usuarios[u]["password"] == p:
+            if u in usuarios and check_password_hash(usuarios[u]["password"], p):
                 session["user"] = u
             else:
-                msg = "❌ Error login"
+                msg = "Error login"
 
-        # LOGOUT
         elif action == "logout":
             session.pop("user", None)
 
-        # ACCIONES YA LOGUEADO
         elif session.get("user"):
             user = session["user"]
-
-            try:
-                monto = float(request.form.get("monto"))
-            except:
-                msg = "Monto inválido"
-                return redirect("/")
+            monto = float(request.form.get("monto", 0))
+            fecha = datetime.datetime.now().strftime("%d/%m %H:%M")
 
             if action == "deposit":
                 usuarios[user]["saldo"] += monto
-                usuarios[user]["historial"].append(f"💸 Depósito ${monto}")
-
-            elif action == "transfer":
+                usuarios[user]["historial"].append(f"{fecha} +${monto}")elif action == "transfer":
                 if monto <= usuarios[user]["saldo"]:
                     usuarios[user]["saldo"] -= monto
-                    usuarios[user]["historial"].append(f"🏦 Transferencia ${monto}")
+                    usuarios[user]["historial"].append(f"{fecha} -${monto}")
                 else:
-                    msg = "❌ Saldo insuficiente"
+                    msg = "Saldo insuficiente"
 
             guardar(usuarios)
 
@@ -229,8 +199,13 @@ def home():
         return render_template_string(html,
             saldo=data["saldo"],
             historial=data["historial"],
+            tarjeta=data["tarjeta"],
             msg=msg)
 
     return render_template_string(html, msg=msg)
 
-app.run(debug=True)
+
+# 🔥 IMPORTANTE PARA RENDER
+import os
+port = int(os.environ.get("PORT", 5000))
+app.run(host="0.0.0.0", port=port)
